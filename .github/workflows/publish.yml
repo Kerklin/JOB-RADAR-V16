@@ -1,0 +1,49 @@
+name: Job Radar V16
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: job-radar-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Regression tests
+        run: python radar.py test
+      - name: Optional browser fallback for UNDP and IOM
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet playwright==1.64.1
+          python -m playwright install --with-deps chromium
+      - name: Collect jobs, score eligibility, build dashboard
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          OWNER="${REPO%%/*}"
+          NAME="${REPO#*/}"
+          PREVIOUS_DATA_URL="https://${OWNER,,}.github.io/${NAME}/jobs.json" python radar.py
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    steps:
+      - id: publish
+        uses: actions/deploy-pages@v5
